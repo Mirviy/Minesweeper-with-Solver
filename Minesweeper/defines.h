@@ -1,6 +1,10 @@
 #ifndef MS_DEFINES_H
 #define MS_DEFINES_H
 
+#define MS_CUSTOM              0
+#define MS_BEG                 1
+#define MS_INT                 2
+#define MS_EXP                 3
 #define MS_BEG_W               8
 #define MS_BEG_H               8
 #define MS_BEG_M              10
@@ -62,9 +66,9 @@
 #define MS_ONFACE           (-1)
 #define MS_ONELSE           (-2)
 #define MS_PAIR(x,y)           \
-               ((x)<<8|(y)&0xFF)
-#define MS_GETX(p)      ((p)>>8)
-#define MS_GETY(p)    ((p)&0xFF)
+            ((x)<<16|(y)&0xFFFF)
+#define MS_GETX(p)     ((p)>>16)
+#define MS_GETY(p)  ((p)&0xFFFF)
 #define MS_ISFUNC(x)     ((x)>8)
 
 #define MS_CELL_METRIC        16

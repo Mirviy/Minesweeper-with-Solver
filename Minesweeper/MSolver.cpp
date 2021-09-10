@@ -4,7 +4,7 @@
 #include<set>
 #include<cmath>
 
-#define Pair(i,j) ((i)<<16|(j))
+#define Pair(i,j) ((i)<<16|(j)&0xFFFF)
 #define Geti(x) ((x)>>16)
 #define Getj(x) ((x)&0xFFFF)
 #define LOGZERO (-1E30)

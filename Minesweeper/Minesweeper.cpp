@@ -4,6 +4,7 @@
 #include<cstdio>
 #include<cstdint>
 #include<ctime>
+#include<queue>
 #include"random.h"
 #include"MSolver.h"
 #include"defines.h"
@@ -15,12 +16,12 @@ static struct{
 	TCHAR begname[MS_MAX_NAME],intname[MS_MAX_NAME],expname[MS_MAX_NAME];
 	int zeroend;
 } config;
-static int bsize=0;
-static INT8 *board=NULL,*backboard=NULL,*showboard=NULL;
+static int bsize=0,game_type;
+static INT8 *board=NULL,*chocoboard=NULL,*backboard=NULL,*showboard=NULL;
 static int32_t *fboard=NULL;
 static HDC mskin,mprob,mtip,mdc;
 static bool lb_down=false,lb_downf=false,lb_downb=false,rb_down=false;
-static bool fvalid=false,showprob=false,endgame=false,autogame=false,cheated=false;
+static bool fvalid=false,showprob=false,choco=false,chocoplaying=false,endgame=false,autogame=false,cheated=false;
 static int bestvalid,bestx,besty,lastx,lasty;
 static int cur_mx,cur_my,curmines,curfrees,game_state,wintime,rectype;
 static int showmines,showtimer,shownumw,showface;
@@ -112,66 +113,16 @@ void ClearBoard(){
 	endgame=false;
 	CheckMenuItem(GetMenu(hWnd),ID_FENDGAME,MF_UNCHECKED);
 	cheated=false;
+	chocoplaying=false;
 	PaintFrame();
 	InvalidateRect(hWnd,NULL,FALSE);
 }
-void NewGame(int initx,int inity){
-	int ntc=config.m;
-	if(ntc>=bsize/2){
-		ntc=bsize-1-ntc;
-		memset(backboard,MS_FLAG,bsize);
-		On(backboard,initx,inity)=MS_UNINITIALIZED;
-		while(ntc){
-			int nx=random64()%config.w,ny=random64()%config.h;
-			if(On(backboard,nx,ny)==MS_FLAG){
-				On(backboard,nx,ny)=MS_UNINITIALIZED;
-				--ntc;
-			}
-		}
-	}
-	else{
-		memset(backboard,MS_UNINITIALIZED,bsize);
-		while(ntc){
-			int nx=random64()%config.w,ny=random64()%config.h;
-			if((nx!=initx||ny!=inity)&&On(backboard,nx,ny)==MS_UNINITIALIZED){
-				On(backboard,nx,ny)=MS_FLAG;
-				--ntc;
-			}
-		}
-	}
-	for(int x=0;x<config.w;++x)for(int y=0;y<config.h;++y)
-		if(On(backboard,x,y)==MS_UNINITIALIZED)
-			On(backboard,x,y)=CountFlagAround(backboard,x,y);
-}
+
 void StopWaiting(){
 	if(game_state==MS_WAITING){
 		game_state=MS_PLAYING;
 		QueryPerformanceCounter(&psknt);
 		pknt.QuadPart=psknt.QuadPart;
-	}
-}
-void Discover(int x,int y){
-	if(On(board,x,y)==MS_UNKNOWN||On(board,x,y)==MS_MARK){
-		if(On(backboard,x,y)==MS_UNINITIALIZED)NewGame(x,y);
-		if(On(backboard,x,y)==MS_FLAG){
-			On(board,x,y)=MS_BOMB;
-			game_state=MS_LOSE;
-		}
-		else{
-			fvalid=false;
-			bestvalid=MS_INVALIDBEST;
-			--curfrees;
-			if((On(board,x,y)=On(backboard,x,y))==0){
-				Discover(x-1,y-1);
-				Discover(x-1,y  );
-				Discover(x-1,y+1);
-				Discover(x  ,y-1);
-				Discover(x  ,y+1);
-				Discover(x+1,y-1);
-				Discover(x+1,y  );
-				Discover(x+1,y+1);
-			}
-		}
 	}
 }
 bool GetFreq(){
@@ -181,6 +132,7 @@ bool GetFreq(){
 	}
 	return fvalid;
 }
+
 void SaveConfig(){
 	FILE *configfp=fopen(config_file_name,"wb");
 	fwrite(&config,sizeof(config),1,configfp);
@@ -209,22 +161,26 @@ void Config(){
 
 	if(board){
 		delete[] board;
+		delete[] chocoboard;
 		delete[] backboard;
 		delete[] fboard;
 		delete[] showboard;
 	}
 	board=new INT8[bsize];
+	chocoboard=new INT8[bsize];
 	backboard=new INT8[bsize];
 	showboard=new INT8[bsize];
 	fboard=new int32_t[bsize];
 
 	HMENU hMenu=GetMenu(hWnd);
-	CheckMenuItem(hMenu,ID_GBEG,
-		(config.w==MS_BEG_W&&config.h==MS_BEG_H&&config.m==MS_BEG_M)?MF_CHECKED:MF_UNCHECKED);
-	CheckMenuItem(hMenu,ID_GINT,
-		(config.w==MS_INT_W&&config.h==MS_INT_H&&config.m==MS_INT_M)?MF_CHECKED:MF_UNCHECKED);
-	CheckMenuItem(hMenu,ID_GEXP,
-		(config.w==MS_EXP_W&&config.h==MS_EXP_H&&config.m==MS_EXP_M)?MF_CHECKED:MF_UNCHECKED);
+	     if(config.w==MS_BEG_W&&config.h==MS_BEG_H&&config.m==MS_BEG_M)game_type=MS_BEG;
+	else if(config.w==MS_INT_W&&config.h==MS_INT_H&&config.m==MS_INT_M)game_type=MS_INT;
+	else if(config.w==MS_EXP_W&&config.h==MS_EXP_H&&config.m==MS_EXP_M)game_type=MS_EXP;
+	else game_type=MS_CUSTOM;
+	CheckMenuItem(hMenu,ID_GBEG,game_type==MS_BEG?MF_CHECKED:MF_UNCHECKED);
+	CheckMenuItem(hMenu,ID_GINT,game_type==MS_INT?MF_CHECKED:MF_UNCHECKED);
+	CheckMenuItem(hMenu,ID_GEXP,game_type==MS_EXP?MF_CHECKED:MF_UNCHECKED);
+	EnableMenuItem(hMenu,ID_FCHOCO,game_type==MS_CUSTOM?MF_DISABLED:MF_ENABLED);
 
 	int cw=config.w*MS_CELL_METRIC+MS_NBOARD_CX;
 	int ch=config.h*MS_CELL_METRIC+MS_NBOARD_CY;
@@ -359,9 +315,9 @@ void WinGame(){
 	if(wintime>MS_INIT_T)wintime=MS_INIT_T;
 	if(cheated)return;
 	rectype=FALSE;
-	if(config.w==MS_BEG_W&&config.h==MS_BEG_H&&config.m==MS_BEG_M&&wintime<config.tbeg)rectype=MS_NEWREC_BEG;
-	if(config.w==MS_INT_W&&config.h==MS_INT_H&&config.m==MS_INT_M&&wintime<config.tint)rectype=MS_NEWREC_INT;
-	if(config.w==MS_EXP_W&&config.h==MS_EXP_H&&config.m==MS_EXP_M&&wintime<config.texp)rectype=MS_NEWREC_EXP;
+	if(game_type==MS_BEG&&wintime<config.tbeg)rectype=MS_NEWREC_BEG;
+	if(game_type==MS_INT&&wintime<config.tint)rectype=MS_NEWREC_INT;
+	if(game_type==MS_EXP&&wintime<config.texp)rectype=MS_NEWREC_EXP;
 
 	if(rectype)DialogBox(hInst,MAKEINTRESOURCE(IDD_NEWREC),hWnd,NewRecProc);
 }
@@ -544,11 +500,17 @@ int Translate(int mx,int my){
 	return MS_ONELSE;
 }
 void CheckGame(){
+	fvalid=false;
+	bestvalid=MS_INVALIDBEST;
 	if(game_state==MS_LOSE){
 		for(int i=0;i<bsize;++i){
-			int bnum=board[i],rnum=backboard[i];
-			if((bnum==MS_UNKNOWN||bnum==MS_MARK)&&rnum==MS_FLAG)board[i]=MS_MINE;
-			if(bnum==MS_FLAG&&rnum!=MS_FLAG)board[i]=MS_MISFLAG;
+			int bnum=board[i];
+			if(bnum==MS_UNKNOWN||bnum==MS_MARK){
+				if(chocoplaying?fboard[i]:backboard[i]==MS_FLAG)board[i]=MS_MINE;
+			}
+			if(bnum==MS_FLAG){
+				if(chocoplaying?fboard[i]!=MS_PROB_MAX:backboard[i]!=MS_FLAG)board[i]=MS_MISFLAG;
+			}
 		}
 	}
 	else if(curfrees==config.m){
@@ -855,7 +817,7 @@ void MenuEvent(WORD wParam){
 		hMenu=GetMenu(hWnd);
 		showprob=((MF_CHECKED&GetMenuState(hMenu,ID_FPROB,MF_BYCOMMAND))==0);
 		CheckMenuItem(hMenu,ID_FPROB,showprob?MF_CHECKED:MF_UNCHECKED);
-		SaveConfig();
+	//	SaveConfig();
 		break;
 	case ID_FBEST:
 		if(game_state==MS_PLAYING||game_state==MS_WAITING){
@@ -884,6 +846,12 @@ void MenuEvent(WORD wParam){
 			StopWaiting();
 		}
 		break;
+	case ID_FCHOCO:
+		hMenu=GetMenu(hWnd);
+		choco=((MF_CHECKED&GetMenuState(hMenu,ID_FCHOCO,MF_BYCOMMAND))==0);
+		CheckMenuItem(hMenu,ID_FCHOCO,choco?MF_CHECKED:MF_UNCHECKED);
+	//	SaveConfig();
+		break;
 	case ID_FVALUE:
 		hMenu=GetMenu(hWnd);
 		config.probtip=((MF_CHECKED&GetMenuState(hMenu,ID_FVALUE,MF_BYCOMMAND))==0);
@@ -900,6 +868,113 @@ void MenuEvent(WORD wParam){
 		About();
 		break;
 	}
+}
+void Discover(int x,int y);
+void NewGame(int initx,int inity){
+	int ntc=config.m;
+	if(ntc>=bsize/2){
+		ntc=bsize-1-ntc;
+		memset(backboard,MS_FLAG,bsize);
+		On(backboard,initx,inity)=MS_UNINITIALIZED;
+		while(ntc){
+			int nx=random64()%config.w,ny=random64()%config.h;
+			if(On(backboard,nx,ny)==MS_FLAG){
+				On(backboard,nx,ny)=MS_UNINITIALIZED;
+				--ntc;
+			}
+		}
+	}
+	else{
+		memset(backboard,MS_UNINITIALIZED,bsize);
+		while(ntc){
+			int nx=random64()%config.w,ny=random64()%config.h;
+			if((nx!=initx||ny!=inity)&&On(backboard,nx,ny)==MS_UNINITIALIZED){
+				On(backboard,nx,ny)=MS_FLAG;
+				--ntc;
+			}
+		}
+	}
+	for(int x=0;x<config.w;++x)for(int y=0;y<config.h;++y)
+		if(On(backboard,x,y)==MS_UNINITIALIZED)
+			On(backboard,x,y)=CountFlagAround(backboard,x,y);
+}
+void NewChocoGame(int initx,int inity){
+
+	INT8 *pushboard=board;
+	board=chocoboard;
+	do{
+		curfrees=bsize;
+		NewGame(initx,inity);
+		memset(board,MS_UNKNOWN,bsize);
+		Discover(initx,inity);
+
+		while(curfrees!=config.m){
+			MSolve(config.w,config.h,config.m,board,fboard);
+
+			bool mustguess=true;
+			for(int x=0;x<config.w;++x)for(int y=0;y<config.h;++y){
+				if(MS_ISFUNC(On(board,x,y))&&On(fboard,x,y)==0){
+					Discover(x,y);
+					mustguess=false;
+				}
+			}
+			if(mustguess)break;
+		} 
+
+	} while(curfrees!=config.m);
+
+	curfrees=bsize;
+	board=pushboard;
+	chocoplaying=true;
+}
+void Discover(std::queue<int> &dislist){
+	int needchoco=chocoplaying?dislist.size():0;
+	while(dislist.size()){
+		int x=MS_GETX(dislist.front());
+		int y=MS_GETY(dislist.front());
+		dislist.pop();
+
+		if(On(board,x,y)==MS_UNKNOWN||On(board,x,y)==MS_MARK){
+			if(needchoco>0&&GetFreq()&&On(fboard,x,y)||On(backboard,x,y)==MS_FLAG){
+				On(board,x,y)=MS_BOMB;
+				game_state=MS_LOSE;
+				break;
+			}
+			if(On(backboard,x,y)==MS_UNINITIALIZED){
+				if(game_type==MS_CUSTOM||!choco)NewGame(x,y);
+				else NewChocoGame(x,y);
+			}
+			--curfrees;
+			if((On(board,x,y)=On(backboard,x,y))==0){
+				dislist.push(MS_PAIR(x-1,y-1));
+				dislist.push(MS_PAIR(x-1,y));
+				dislist.push(MS_PAIR(x-1,y+1));
+				dislist.push(MS_PAIR(x,y-1));
+				dislist.push(MS_PAIR(x,y+1));
+				dislist.push(MS_PAIR(x+1,y-1));
+				dislist.push(MS_PAIR(x+1,y));
+				dislist.push(MS_PAIR(x+1,y+1));
+			}
+		}
+		--needchoco;
+	}
+}
+void Discover(int x,int y){
+	std::queue<int> dislist;
+	dislist.push(MS_PAIR(x,y));
+	Discover(dislist);
+}
+void DiscoverAround(int x,int y){
+	std::queue<int> dislist;
+	dislist.push(MS_PAIR(x-1,y-1));
+	dislist.push(MS_PAIR(x-1,y  ));
+	dislist.push(MS_PAIR(x-1,y+1));
+	dislist.push(MS_PAIR(x  ,y-1));
+	dislist.push(MS_PAIR(x  ,y+1));
+	dislist.push(MS_PAIR(x+1,y-1));
+	dislist.push(MS_PAIR(x+1,y  ));
+	dislist.push(MS_PAIR(x+1,y+1));
+	Discover(dislist);
 }
 void ClickEvent(int pos,int type){
 	if(pos==MS_ONELSE)return;
@@ -927,14 +1002,7 @@ void ClickEvent(int pos,int type){
 			if(type==MS_LCLICK)Discover(x,y);
 			else if(type==MS_DBLCLICK&&!MS_ISFUNC(On(board,x,y))){
 				if(CountFlagAround(board,x,y)==On(board,x,y)){
-					Discover(x-1,y-1);
-					Discover(x-1,y  );
-					Discover(x-1,y+1);
-					Discover(x  ,y-1);
-					Discover(x  ,y+1);
-					Discover(x+1,y-1);
-					Discover(x+1,y  );
-					Discover(x+1,y+1);					
+					DiscoverAround(x,y);
 				}
 			}
 			CheckGame();
