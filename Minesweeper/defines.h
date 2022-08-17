@@ -71,6 +71,10 @@
 #define MS_GETY(p)  ((p)&0xFFFF)
 #define MS_ISFUNC(x)     ((x)>8)
 
+#define MS_NORMAL_NUM 0x000000FF
+#define MS_CHOCO_NUM  0x0000FF00
+#define MS_LAYOUT_NUM 0x00FFFF00
+
 #define MS_CELL_METRIC        16
 #define MS_BEST_SHC            2
 #define MS_NUMBER_CX          11

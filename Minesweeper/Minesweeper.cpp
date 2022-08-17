@@ -22,6 +22,8 @@ static int32_t *fboard=NULL;
 static HDC mskin,mprob,mtip,mdc;
 static bool lb_down=false,lb_downf=false,lb_downb=false,rb_down=false;
 static bool fvalid=false,showprob=false,choco=false,chocoplaying=false,endgame=false,autogame=false,cheated=false;
+static bool layout=false,shift=false;
+static COLORREF curskin=MS_NORMAL_NUM;
 static int bestvalid,bestx,besty,lastx,lasty;
 static int cur_mx,cur_my,curmines,curfrees,game_state,wintime,rectype;
 static int showmines,showtimer,shownumw,showface;
@@ -117,16 +119,54 @@ void ClearBoard(){
 	PaintFrame();
 	InvalidateRect(hWnd,NULL,FALSE);
 }
-
+void ChangeSkinColor(COLORREF colormask){
+	if(curskin==colormask)return;
+	for(int y=MS_NUMBER_SHY;y<MS_NUMBER_SHY+MS_NUMBER_CY;++y)
+		for(int x=0;x<MS_NUMBER_SHXK*11;++x){
+		COLORREF c=GetPixel(mskin,x,y);
+		if(!c)continue;
+		UCHAR r=GetRValue(c);
+		UCHAR g=GetGValue(c);
+		UCHAR b=GetBValue(c);
+		UCHAR a=r|g|b;
+		c=RGB(a,a,a)&colormask;
+		SetPixel(mskin,x,y,c);
+	}
+	curskin=colormask;
+	showmines=bsize;
+	showtimer=MS_MAX_TIMER;
+}
+void LayoutUpdate(){
+	fvalid=false;
+	game_state=MS_WAITING;
+}
+void StopAutoGame(){
+	bestvalid=MS_INVALIDBEST;
+	endgame=false;
+	CheckMenuItem(GetMenu(hWnd),ID_FENDGAME,MF_UNCHECKED);
+	autogame=false;
+	CheckMenuItem(GetMenu(hWnd),ID_FAUTO,MF_UNCHECKED);
+}
+int MaxChocoMines(){
+	// equations are fit from benchmarks to ensure
+	// maximum time used to generate chocolate game does not exceed 0.7 s.
+	double x=log((double)config.h);
+	double y=log((double)config.w);
+	const double A=-0.04066958767322483;
+	const double B=+1.011944215416124;
+	const double C=-1.0106142501751958;
+	const double D=+0.03105017841744494;
+	return floor(exp(A*(x*x+y*y)+B*(x+y)+C+D*x*y));
+}
 void StopWaiting(){
-	if(game_state==MS_WAITING){
+	if(game_state==MS_WAITING&&!layout){
 		game_state=MS_PLAYING;
 		QueryPerformanceCounter(&psknt);
 		pknt.QuadPart=psknt.QuadPart;
 	}
 }
 bool GetFreq(){
-	if(game_state!=MS_PLAYING)return false;
+	if(game_state!=MS_PLAYING&&!layout)return false;
 	if(!fvalid){
 		if(fvalid=MSolve(config.w,config.h,config.m,board,fboard))cheated=true;
 	}
@@ -157,6 +197,10 @@ void Config(){
 	bsize=config.w*config.h;
 	if(config.m<=0)config.m=1;
 	if(config.m>=bsize)config.m=bsize-1;
+	if(choco){
+		int mcm=MaxChocoMines();
+		if(config.m>mcm)config.m=mcm;
+	}
 	SaveConfig();
 
 	if(board){
@@ -180,7 +224,7 @@ void Config(){
 	CheckMenuItem(hMenu,ID_GBEG,game_type==MS_BEG?MF_CHECKED:MF_UNCHECKED);
 	CheckMenuItem(hMenu,ID_GINT,game_type==MS_INT?MF_CHECKED:MF_UNCHECKED);
 	CheckMenuItem(hMenu,ID_GEXP,game_type==MS_EXP?MF_CHECKED:MF_UNCHECKED);
-	EnableMenuItem(hMenu,ID_FCHOCO,game_type==MS_CUSTOM?MF_DISABLED:MF_ENABLED);
+	//EnableMenuItem(hMenu,ID_FCHOCO,game_type==MS_CUSTOM?MF_DISABLED:MF_ENABLED);
 
 	int cw=config.w*MS_CELL_METRIC+MS_NBOARD_CX;
 	int ch=config.h*MS_CELL_METRIC+MS_NBOARD_CY;
@@ -523,7 +567,7 @@ void CheckGame(){
 		WinGame();
 	}
 }
-void KeyDownEvent(WPARAM wParam,bool shift){
+void KeyDownEvent(WPARAM wParam){
 	switch(wParam){
 	case VK_F2:
 		PostMessage(hWnd,WM_COMMAND,ID_GSTART,0);
@@ -547,7 +591,7 @@ void PaintEvent(){
 	int lw=MS_CELL_METRIC*config.w,lh=MS_CELL_METRIC*config.h;
 	int x0=0,x1=x0+MS_BORDER_LEFT,x2=x1+lw;
 	int y0=0,y1=y0+MS_BORDER_TOP,y2=y1+MS_HEADER_CY,y3=y2+MS_BORDER_MID,y4=y3+lh;
-	bool drawprob=showprob&&backboard[0]!=MS_UNINITIALIZED;
+	bool drawprob=showprob&&(layout||backboard[0]!=MS_UNINITIALIZED);
 	bool autoclick=(bestvalid==MS_PRESSBEST);
 	if(drawprob)drawprob=GetFreq();
 
@@ -580,7 +624,7 @@ void PaintEvent(){
 		if(MS_ISFUNC(cell)){
 			if(game_state==MS_WAITING||game_state==MS_PLAYING){
 				bool isdblcd=(lb_down&&rb_down&&abs(curx-x)<=1&&abs(cury-y)<=1);
-				bool issinglecd=(lb_downb&&curx==x&&cury==y);
+				bool issinglecd=(lb_downb&&curx==x&&cury==y)&&!(shift&&layout);
 				bool isautocd=autoclick;
 				if(isautocd){
 					isautocd=(x==bestx&&y==besty);
@@ -849,8 +893,26 @@ void MenuEvent(WORD wParam){
 	case ID_FCHOCO:
 		hMenu=GetMenu(hWnd);
 		choco=((MF_CHECKED&GetMenuState(hMenu,ID_FCHOCO,MF_BYCOMMAND))==0);
+		layout=false;
 		CheckMenuItem(hMenu,ID_FCHOCO,choco?MF_CHECKED:MF_UNCHECKED);
-	//	SaveConfig();
+		CheckMenuItem(hMenu,ID_FLAYOUT,MF_UNCHECKED);
+		ChangeSkinColor(choco?MS_CHOCO_NUM:MS_NORMAL_NUM);
+		ClearBoard();
+		EnableMenuItem(hMenu,ID_FBEST,MF_ENABLED);
+		EnableMenuItem(hMenu,ID_FENDGAME,MF_ENABLED);
+		EnableMenuItem(hMenu,ID_FAUTO,MF_ENABLED);
+		if(config.m>MaxChocoMines())Config();
+		break;
+	case ID_FLAYOUT:
+		hMenu=GetMenu(hWnd);
+		layout=((MF_CHECKED&GetMenuState(hMenu,ID_FLAYOUT,MF_BYCOMMAND))==0);
+		CheckMenuItem(hMenu,ID_FLAYOUT,layout?MF_CHECKED:MF_UNCHECKED);
+		ChangeSkinColor(layout?MS_LAYOUT_NUM:(choco?MS_CHOCO_NUM:MS_NORMAL_NUM));
+		if(game_state!=MS_PLAYING)ClearBoard();
+		if(layout)StopAutoGame();
+		EnableMenuItem(hMenu,ID_FBEST,layout?MF_DISABLED:MF_ENABLED);
+		EnableMenuItem(hMenu,ID_FENDGAME,layout?MF_DISABLED:MF_ENABLED);
+		EnableMenuItem(hMenu,ID_FAUTO,layout?MF_DISABLED:MF_ENABLED);
 		break;
 	case ID_FVALUE:
 		hMenu=GetMenu(hWnd);
@@ -870,12 +932,21 @@ void MenuEvent(WORD wParam){
 	}
 }
 void Discover(int x,int y);
-void NewGame(int initx,int inity){
+void NewGame(int initx,int inity,bool mustopen=false){
 	int ntc=config.m;
 	if(ntc>=bsize/2){
 		ntc=bsize-1-ntc;
 		memset(backboard,MS_FLAG,bsize);
 		On(backboard,initx,inity)=MS_UNINITIALIZED;
+		if(mustopen){
+			for(int idx=-1;idx<=1;++idx)for(int idy=-1;idy<=1;++idy){
+				int nx=initx+idx,ny=inity+idy;
+				if(On(backboard,nx,ny)==MS_FLAG){
+					On(backboard,nx,ny)=MS_UNINITIALIZED;
+					--ntc;
+				}
+			}
+		}
 		while(ntc){
 			int nx=random64()%config.w,ny=random64()%config.h;
 			if(On(backboard,nx,ny)==MS_FLAG){
@@ -888,7 +959,9 @@ void NewGame(int initx,int inity){
 		memset(backboard,MS_UNINITIALIZED,bsize);
 		while(ntc){
 			int nx=random64()%config.w,ny=random64()%config.h;
-			if((nx!=initx||ny!=inity)&&On(backboard,nx,ny)==MS_UNINITIALIZED){
+			if(On(backboard,nx,ny)==MS_UNINITIALIZED&&(
+				mustopen?(abs(nx-initx)>1||abs(ny-inity)>1):(nx!=initx||ny!=inity)
+				)){
 				On(backboard,nx,ny)=MS_FLAG;
 				--ntc;
 			}
@@ -904,7 +977,7 @@ void NewChocoGame(int initx,int inity){
 	board=chocoboard;
 	do{
 		curfrees=bsize;
-		NewGame(initx,inity);
+		NewGame(initx,inity,true);
 		memset(board,MS_UNKNOWN,bsize);
 		Discover(initx,inity);
 
@@ -929,23 +1002,30 @@ void NewChocoGame(int initx,int inity){
 }
 void Discover(std::queue<int> &dislist){
 	int needchoco=chocoplaying?dislist.size():0;
+	bool gamelose=false;
 	while(dislist.size()){
 		int x=MS_GETX(dislist.front());
 		int y=MS_GETY(dislist.front());
 		dislist.pop();
 
 		if(On(board,x,y)==MS_UNKNOWN||On(board,x,y)==MS_MARK){
+			if(layout){
+				On(board,x,y)=CountFlagAround(board,x,y);
+				LayoutUpdate();
+			}
+			else{
 			if(needchoco>0&&GetFreq()&&On(fboard,x,y)||On(backboard,x,y)==MS_FLAG){
 				On(board,x,y)=MS_BOMB;
-				game_state=MS_LOSE;
-				break;
+				gamelose=true;
 			}
 			if(On(backboard,x,y)==MS_UNINITIALIZED){
-				if(game_type==MS_CUSTOM||!choco)NewGame(x,y);
+				if(!choco)NewGame(x,y);
 				else NewChocoGame(x,y);
+				QueryPerformanceCounter(&psknt);
+				pknt.QuadPart=psknt.QuadPart;
 			}
 			--curfrees;
-			if((On(board,x,y)=On(backboard,x,y))==0){
+			if(On(board,x,y)!=MS_BOMB&&(On(board,x,y)=On(backboard,x,y))==0){
 				dislist.push(MS_PAIR(x-1,y-1));
 				dislist.push(MS_PAIR(x-1,y));
 				dislist.push(MS_PAIR(x-1,y+1));
@@ -955,9 +1035,10 @@ void Discover(std::queue<int> &dislist){
 				dislist.push(MS_PAIR(x+1,y));
 				dislist.push(MS_PAIR(x+1,y+1));
 			}
-		}
+		}}
 		--needchoco;
 	}
+	if(gamelose)game_state=MS_LOSE;
 }
 void Discover(int x,int y){
 	std::queue<int> dislist;
@@ -1084,7 +1165,6 @@ void TimerEvent(){
 }
 
 LRESULT CALLBACK WndProc(HWND _hWndp,UINT message,WPARAM wParam,LPARAM lParam){
-	static bool shift=false;
 	HDC hdc;
 	PAINTSTRUCT ps;
 	int curx=GET_X_LPARAM(lParam),cury=GET_Y_LPARAM(lParam);
@@ -1099,7 +1179,7 @@ LRESULT CALLBACK WndProc(HWND _hWndp,UINT message,WPARAM wParam,LPARAM lParam){
 		break;
 	case WM_KEYDOWN:
 		if(wParam==VK_SHIFT)shift=true;
-		else KeyDownEvent(wParam,shift);
+		else KeyDownEvent(wParam);
 		break;
 	case WM_KEYUP:
 		if(wParam==VK_SHIFT)shift=false;
@@ -1107,11 +1187,18 @@ LRESULT CALLBACK WndProc(HWND _hWndp,UINT message,WPARAM wParam,LPARAM lParam){
 	case WM_LBUTTONDOWN:
 		if(pos==MS_ONFACE)lb_downf=true;
 		else if(rb_down)lb_down=true;
-		else lb_downb=true;
+		else{
+			lb_downb=true;
+			if(layout&&shift&&!MS_ISFUNC(On(board,x,y))){
+				On(board,x,y)=MS_UNKNOWN;
+				LayoutUpdate();
+			}
+		}
 		break;
 	case WM_LBUTTONUP:
 		if(lb_down&&rb_down)ClickEvent(pos,MS_DBLCLICK);
-		else if(lb_downf&&pos==MS_ONFACE||lb_downb&&pos!=MS_ONFACE)ClickEvent(pos,MS_LCLICK);
+		else if(lb_downf&&pos==MS_ONFACE||!(layout&&shift)&&lb_downb&&pos!=MS_ONFACE)
+			ClickEvent(pos,MS_LCLICK);
 		lb_downf=false;
 		lb_downb=false;
 		lb_down=false;
@@ -1131,6 +1218,28 @@ LRESULT CALLBACK WndProc(HWND _hWndp,UINT message,WPARAM wParam,LPARAM lParam){
 	case WM_MOUSEMOVE:
 		cur_mx=curx;
 		cur_my=cury;
+		if(layout&&pos!=MS_ONFACE){
+			if(lb_down&&rb_down)ClickEvent(pos,MS_DBLCLICK);
+			else if(lb_downb){
+				if(!shift)ClickEvent(pos,MS_LCLICK);
+				else if(!MS_ISFUNC(On(board,x,y))){
+					On(board,x,y)=MS_UNKNOWN;
+					LayoutUpdate();
+				}
+			}
+		}
+		break;
+	case WM_MOUSEWHEEL:
+		if(layout){
+			int zDelta=GET_WHEEL_DELTA_WPARAM(wParam);
+			int pos=Translate(cur_mx,cur_my);
+			int x=MS_GETX(pos),y=MS_GETY(pos);
+			INT8 &bxy=On(board,x,y);
+			bxy-=zDelta/WHEEL_DELTA;
+			bxy%=1+MS_UNKNOWN;
+			if(bxy<0)bxy+=1+MS_UNKNOWN;
+			LayoutUpdate();
+		}
 		break;
 	case WM_PAINT:
 		hdc=BeginPaint(_hWndp,&ps);

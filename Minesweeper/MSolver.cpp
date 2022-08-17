@@ -88,33 +88,36 @@ int8_t &Board(int32_t i,int32_t j){
 int8_t &Board(int32_t ijpair){
 	return Board(Geti(ijpair),Getj(ijpair));
 }
-//Mines
-int32_t countMinesAround(int32_t i,int32_t j){
+//mines: known mines, frees: free blocks that could be a mine (i.e. not known not-mine-block)
+void countAround(int32_t i,int32_t j,int32_t &frees,int32_t &mines){
 	bool u=i>0,d=i+1<height,l=j>0,r=j+1<width;
-	int32_t maround=0;
-	if(u)maround+=(Board(i-1,j)==-3)+(l&&Board(i-1,j-1)==-3);
-	if(l)maround+=(Board(i,j-1)==-3)+(d&&Board(i+1,j-1)==-3);
-	if(d)maround+=(Board(i+1,j)==-3)+(r&&Board(i+1,j+1)==-3);
-	if(r)maround+=(Board(i,j+1)==-3)+(u&&Board(i-1,j+1)==-3);
-	return maround;
-}
-//Free : unknown blocks or known mines, maybe a mine.
-int32_t countFreesAround(int32_t i,int32_t j){
-	bool u=i>0,d=i+1<height,l=j>0,r=j+1<width;
-	int32_t frees=0;
-	if(u)frees+=(Board(i-1,j)<-1)+(l&&Board(i-1,j-1)<-1);
-	if(l)frees+=(Board(i,j-1)<-1)+(d&&Board(i+1,j-1)<-1);
-	if(d)frees+=(Board(i+1,j)<-1)+(r&&Board(i+1,j+1)<-1);
-	if(r)frees+=(Board(i,j+1)<-1)+(u&&Board(i-1,j+1)<-1);
-	return frees;
+	frees=0;
+	mines=0;
+	if(u){
+		frees+=(Board(i-1,j)<-1)+(l&&Board(i-1,j-1)<-1);
+		mines+=(Board(i-1,j)==-3)+(l&&Board(i-1,j-1)==-3);
+	}
+	if(l){
+		frees+=(Board(i,j-1)<-1)+(d&&Board(i+1,j-1)<-1);
+		mines+=(Board(i,j-1)==-3)+(d&&Board(i+1,j-1)==-3);
+	}
+	if(d){
+		frees+=(Board(i+1,j)<-1)+(r&&Board(i+1,j+1)<-1);
+		mines+=(Board(i+1,j)==-3)+(r&&Board(i+1,j+1)==-3);
+	}
+	if(r){
+		frees+=(Board(i,j+1)<-1)+(u&&Board(i-1,j+1)<-1);
+		mines+=(Board(i,j+1)==-3)+(u&&Board(i-1,j+1)==-3);
+	}
 }
 //check after make a postulate in tank algorithm
 bool ConsistencyAround(int32_t i,int32_t j){
 	for(int32_t di=-1;di<=1;++di)for(int32_t dj=-1;dj<=1;++dj){
 		int32_t numb=Board(i+di,j+dj);
 		if(numb>=0){
-			if(numb<countMinesAround(i+di,j+dj))return false;
-			if(numb>countFreesAround(i+di,j+dj))return false;
+			int32_t frees,mines;
+			countAround(i+di,j+dj,frees,mines);
+			if(numb>frees||numb<mines)return false;
 		}
 	}
 	return true;
@@ -123,10 +126,10 @@ bool ConsistencyAround(int32_t i,int32_t j){
 bool isBoundry(int32_t i,int32_t j){
 	if(Board(i,j)!=-2)return false;
 	bool u=i>0,d=i+1<height,l=j>0,r=j+1<width;
-	if(u)if(Board(i-1,j)>0||l&&Board(i-1,j-1)>0)return true;
-	if(l)if(Board(i,j-1)>0||d&&Board(i+1,j-1)>0)return true;
-	if(d)if(Board(i+1,j)>0||r&&Board(i+1,j+1)>0)return true;
-	if(r)if(Board(i,j+1)>0||u&&Board(i-1,j+1)>0)return true;
+	if(u)if(Board(i-1,j)>=0||l&&Board(i-1,j-1)>=0)return true;
+	if(l)if(Board(i,j-1)>=0||d&&Board(i+1,j-1)>=0)return true;
+	if(d)if(Board(i+1,j)>=0||r&&Board(i+1,j+1)>=0)return true;
+	if(r)if(Board(i,j+1)>=0||u&&Board(i-1,j+1)>=0)return true;
 	return false;
 }
 //solve basic cases, gives basic consistency test.
@@ -134,73 +137,29 @@ bool BasicSolver(){
 	bool diff;
 	do{
 		diff=false;
-		//Attempt to flag mines(if number of a square around it = its number)
-		for(int32_t i=0;i<height;++i)for(int32_t j=0;j<width;++j){
-			int32_t bij=Board(i,j);
-			if(bij>0){
-				int32_t numf=countFreesAround(i,j);
-				if(bij>numf)return false;
-				if(bij==numf){
-					for(int32_t di=-1;di<=1;++di)for(int32_t dj=-1;dj<=1;++dj)
-						if(Board(i+di,j+dj)==-2)Board(i+di,j+dj)=-3;
-				}
-			}
-		}
-
-		//Find a square where the number of mines around it is the same as it
-		//Then click every empty square around it
 		for(int32_t i=0;i<height;++i)for(int32_t j=0;j<width;++j){
 			int32_t bij=Board(i,j);
 			if(bij>=0){
-				int32_t numm=countMinesAround(i,j);
-				if(bij<numm)return false;
+				int32_t numf,numm;
+				countAround(i,j,numf,numm);
+				if(bij>numf||bij<numm)return false;
+
+				if(bij==numf){
+					//Attempt to flag mines(if number of a square around it = its number)
+					for(int32_t di=-1;di<=1;++di)for(int32_t dj=-1;dj<=1;++dj)
+						if(Board(i+di,j+dj)==-2){
+							Board(i+di,j+dj)=-3;
+							++numm;
+						}
+				}
 				if(bij==numm){
+					//Find a square where the number of mines around it is the same as it
+					//Then click every empty square around it
 					for(int32_t di=-1;di<=1;++di)for(int32_t dj=-1;dj<=1;++dj)
 						if(Board(i+di,j+dj)==-2){
 							diff=true;
 							Board(i+di,j+dj)=-1;
 						}
-				}
-			}
-		}
-
-		//Pair-Solver
-		for(int32_t i1=0;i1<height;++i1)for(int32_t j1=0;j1<width;++j1)if(Board(i1,j1)>0){
-			for(int32_t it2=13;it2<25;++it2){
-				int32_t i2=i1-2+it2/5,j2=j1-2+it2%5;
-				if(Board(i2,j2)>0){
-					std::vector<int32_t> mu,lu,ru;
-					int32_t a=Board(i1,j1),b=Board(i2,j2),
-						mini=(i1<i2?i1:i2)-1,minj=(j1<j2?j1:j2)-1,
-						maxi=(i1<i2?i2:i1)+1,maxj=(j1<j2?j2:j1)+1;
-					if(mini<0)mini=0;
-					if(minj<0)minj=0;
-					if(maxi>=height)maxi=height-1;
-					if(maxj>=width)maxj=width-1;
-					for(int32_t ci=mini;ci<=maxi;++ci)for(int32_t cj=minj;cj<=maxj;++cj)if(Board(ci,cj)<-1){
-						bool isl=(abs(ci-i1)<=1&&abs(cj-j1)<=1),isr=(abs(ci-i2)<=1&&abs(cj-j2)<=1);
-						if(Board(ci,cj)==-2){
-							if(isl&&isr)mu.push_back(Pair(ci,cj));
-							else if(isl)lu.push_back(Pair(ci,cj));
-							else if(isr)ru.push_back(Pair(ci,cj));
-						}
-						else{
-							if(isl)--a;
-							if(isr)--b;
-						}
-					}
-					if(a>b+lu.size()||b>a+ru.size())return false;
-					if(b==a+ru.size()){
-						lu.swap(ru);
-						int32_t tp=a;
-						a=b;
-						b=tp;
-					}
-					if(a==b+lu.size()){
-						if(lu.size()>0||ru.size()>0)diff=true;
-						for(int32_t i=0;i<lu.size();++i)Board(lu[i])=-3;
-						for(int32_t i=0;i<ru.size();++i)Board(ru[i])=-1;
-					}
 				}
 			}
 		}
@@ -401,7 +360,7 @@ bool MSolve(int32_t _width,int32_t _height,int32_t _mines,const int8_t *_board,i
 			else other.push_back(Pair(i,j));
 		}
 	}
-	if(mines>unknowns)return false;
+	if(mines<0||mines>unknowns)return false;
 	Segregate(border,regions);
 
 	int no=other.size();
@@ -453,6 +412,8 @@ bool MSolve(int32_t _width,int32_t _height,int32_t _mines,const int8_t *_board,i
 				if(mr!=no)LogAdd(othercf,locweight+log((double)(no-mr)/no));
 			}
 		}
+
+		if(allw<-1)return false;
 
 		for(int32_t i=0;i<r0.r.size();++i){
 			int32_t cpi=LogToInt(scellf[i],scellcf[i],allw);
