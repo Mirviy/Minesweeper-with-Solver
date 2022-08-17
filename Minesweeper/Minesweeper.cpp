@@ -1241,6 +1241,13 @@ LRESULT CALLBACK WndProc(HWND _hWndp,UINT message,WPARAM wParam,LPARAM lParam){
 			LayoutUpdate();
 		}
 		break;
+	case WM_KILLFOCUS:
+		shift=false;
+		rb_down=false;
+		lb_down=false;
+		lb_downb=false;
+		lb_downf=false;
+		break;
 	case WM_PAINT:
 		hdc=BeginPaint(_hWndp,&ps);
 		BitBlt(
