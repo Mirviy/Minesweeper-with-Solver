@@ -1100,7 +1100,7 @@ void ClickEvent(int pos,int type){
 		return;
 	}
 	
-	if(MS_ONBOARD(pos)&&game_state==MS_WAITING||game_state==MS_PLAYING){
+	if(MS_ONBOARD(pos)&&(game_state==MS_WAITING||game_state==MS_PLAYING)){
 		int x=MS_GETX(pos),y=MS_GETY(pos);
 		if(type==MS_RCLICK){
 			if(On(board,x,y)==MS_UNKNOWN){

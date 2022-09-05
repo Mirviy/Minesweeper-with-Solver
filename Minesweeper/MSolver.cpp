@@ -30,6 +30,39 @@ Internal representation of the board state.
 static int8_t *board=NULL,*backboard=NULL;
 static int32_t height=0,width=0,mines=0;
 #define Index(i,j) ((i)*width+(j))
+
+#if true
+//for vectors about supercells, 
+//since maximum size for 1 supercell(and constraints about 1 supercell) will never exceed 8
+//using std::vector is too heavy in allocation/deallocation
+template<typename T>
+class vec8{
+	T _dat[8];
+	size_t _size;
+public:
+
+	size_t size() const { return _size; }
+	void push_back(T val){ _dat[_size++]=val; }
+	T &operator[](size_t s){ return _dat[s]; }
+	const T&operator[](size_t s) const{ return _dat[s]; }
+	T *begin(){ return _dat; }
+	const T*begin() const{ return _dat; }
+	T *end(){ return &_dat[_size]; }
+	const T*end() const{ return &_dat[_size]; }
+
+	//Note this behavior is not consistent with std::vector
+	void resize(size_t size,T val){
+		for(size_t i=0;i<size;++i)_dat[i]=val;
+		_size=size;
+	}
+
+	vec8(){ _size=0; }
+	vec8(size_t size,T val){ resize(size,val); }
+};
+#else
+#define vec8 std::vector
+#endif
+
 /*
 region<supercell>:
 	for all i, n[c]=sum(f[c][i][j],j)
@@ -42,15 +75,15 @@ public:
 	//Postulate position of mines, p[i] is number of mines in i-th supercell, used in Solve process
 	std::vector<int32_t> p;
 	//x[i][k] is index of k-th constraints around i-th supercell in region
-	std::vector<std::vector<int32_t>> x;
+	std::vector<vec8<int32_t>> x;
 	//all supercells, r[i] is i-th supercell in region, s[i]=r[i].size
-	std::vector<std::vector<int32_t>> r;
+	std::vector<vec8<int32_t>> r;
 	//all possible total number of mines in region, m[c] is c-th possible number
 	std::vector<int32_t> m;
 	//n[c] is log(number of cases in which region contains m[c] mines)
 	std::vector<double> n;
 	//f[c][i][j] is log(number of cases in which (r[i] contains j mines) and (region contains m[c] mines))
-	std::vector<std::vector<std::vector<double>>> f;
+	std::vector<std::vector<vec8<double>>> f;
 	//log(number of possible cases)
 	double w;
 	//p(r)
@@ -155,8 +188,8 @@ bool BasicSolver(){
 					//Attempt to flag mines(if number of a square around it = its number)
 					for(int32_t di=is;di<=ie;++di)for(int32_t dj=js;dj<=je;++dj)
 						if(board[Index(di,dj)]==UNKNOWN){
+							diff=true;
 							board[Index(di,dj)]=MINE;
-							++numm;
 						}
 				}
 				else if(bij==numm){
@@ -192,7 +225,7 @@ void Region::Solve(int32_t i,int32_t maxmines){
 		}
 		int32_t mchs=std::find(m.begin(),m.end(),mk)-m.begin();
 		if(mchs==m.size()){
-			std::vector<std::vector<double>> shape(r.size());
+			std::vector<vec8<double>> shape(r.size());
 			for(int32_t i=0;i<r.size();++i)shape[i].resize(r[i].size()+1,LOGZERO);
 			m.push_back(mk);
 			n.push_back(LOGZERO);
@@ -261,15 +294,15 @@ bool Region::Combine(Region &R,int32_t maxmines){
 	//n[c] is log(number of cases in which region contains m[c] mines)
 	std::vector<double> nn;
 	//f[c][i][j] is log(number of cases in which (r[i] contains j mines) and (region contains m[c] mines))
-	std::vector<std::vector<std::vector<double>>> nf;
+	std::vector<std::vector<vec8<double>>> nf;
 	//log(number of possible cases)
 	double nw=LOGZERO;
 
 	bool retv=false;
 	int32_t n1=r.size(),n2=R.r.size();
 	r.resize(n1+n2);
-	for(int32_t i=0;i<n2;++i)r[n1+i].swap(R.r[i]);
-	std::vector<std::vector<double>> shape(n1+n2);
+	for(int32_t i=0;i<n2;++i)r[n1+i]=(R.r[i]);
+	std::vector<vec8<double>> shape(n1+n2);
 	for(int32_t i=0;i<r.size();++i)shape[i].resize(r[i].size()+1,LOGZERO);
 
 	for(int32_t ch1=0;ch1<m.size();++ch1)for(int32_t ch2=0;ch2<R.m.size();++ch2){
@@ -309,14 +342,14 @@ void Segregate(const std::vector<int32_t> &border,std::vector<Region> &result){
 		uncovered.erase(uncovered.begin());
 
 		while(!connects.empty()){
-			finished.r.push_back(std::vector<int32_t>(1,*connects.begin()));
-			std::vector<int32_t> &curscell=finished.r.back();
+			finished.r.push_back(vec8<int32_t>(1,*connects.begin()));
+			vec8<int32_t> &curscell=finished.r.back();
 			int32_t i1=Geti(curscell[0]),j1=Getj(curscell[0]);
 			connects.erase(connects.begin());
 
 			//current supercell 0's all ajacent numbers are constraints
-			finished.x.push_back(std::vector<int32_t>());
-			std::vector<int32_t> &curcons=finished.x.back();
+			finished.x.push_back(vec8<int32_t>());
+			vec8<int32_t> &curcons=finished.x.back();
 
 			//Find all connecting cells
 			int32_t

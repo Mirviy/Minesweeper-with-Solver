@@ -35,14 +35,7 @@
 
 #define MS_PROB_MAX    100000000
 #define MS_PROB_DRAWMAX       21
-#define MS_SAFE_COLOR          \
-	128,0,255,255
-#define MS_TOSAFE_COLOR        \
-	64,0,255,0
-#define MS_TOMINE_COLOR        \
-	128,255,0,0
-#define MS_MINE_COLOR          \
-	192,255,0,0
+
 #define MS_BESTSTEP_MMIN      40
 #define MS_BESTSTEP_MMAX    1000
 #define MS_INVALIDBEST         0
@@ -64,7 +57,7 @@
 #define MS_RCLICK              1
 #define MS_DBLCLICK            2
 #define MS_ONFACE           (-1)
-#define MS_ONMINE			(-2)
+#define MS_ONMINE           (-2)
 #define MS_ONELSE           (-3)
 #define MS_ONBOARD(p)   ((p)>=0)
 #define MS_PAIR(x,y)           \
@@ -91,10 +84,10 @@
 #define MS_BORDER_RIGHT       12
 #define MS_HEADER_CY          33
 #define MS_NBOARD_CX           \
-	           (MS_BORDER_LEFT \
-			  +MS_BORDER_RIGHT )
+               (MS_BORDER_LEFT \
+              +MS_BORDER_RIGHT )
 #define MS_NBOARD_CY           \
-	            (MS_BORDER_TOP \
+                (MS_BORDER_TOP \
                 +MS_BORDER_MID \
              +MS_BORDER_BOTTOM \
                  +MS_HEADER_CY )
