@@ -64,7 +64,9 @@
 #define MS_RCLICK              1
 #define MS_DBLCLICK            2
 #define MS_ONFACE           (-1)
-#define MS_ONELSE           (-2)
+#define MS_ONMINE			(-2)
+#define MS_ONELSE           (-3)
+#define MS_ONBOARD(p)   ((p)>=0)
 #define MS_PAIR(x,y)           \
             ((x)<<16|(y)&0xFFFF)
 #define MS_GETX(p)     ((p)>>16)

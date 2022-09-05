@@ -1,5 +1,3 @@
-#include<windows.h>
-#include<windowsx.h>
 #include<cstdlib>
 #include<cstdio>
 #include<cstdint>
@@ -7,6 +5,9 @@
 #include<queue>
 #include"random.h"
 #include"MSolver.h"
+#define NOMINMAX
+#include<windows.h>
+#include<windowsx.h>
 #include"defines.h"
 #include"resource.h"
 const char config_file_name[]="Minesweeper.config";
@@ -22,7 +23,8 @@ static int32_t *fboard=NULL;
 static HDC mskin,mprob,mtip,mdc;
 static bool lb_down=false,lb_downf=false,lb_downb=false,rb_down=false;
 static bool fvalid=false,showprob=false,choco=false,chocoplaying=false,endgame=false,autogame=false,cheated=false;
-static bool layout=false,shift=false;
+static bool layout=false,rehide=false;
+static int layoutmines=0,wheeldeltam=1;
 static COLORREF curskin=MS_NORMAL_NUM;
 static int bestvalid,bestx,besty,lastx,lasty;
 static int cur_mx,cur_my,curmines,curfrees,game_state,wintime,rectype;
@@ -99,16 +101,20 @@ void PaintFrame(){
 	LongPaint(x1,y1,lw,MS_HEADER_CY,MS_FRAME_SHX7,MS_FRAME_SHY1,1,1);
 
 }
+int GetTotalMines(){
+	return layout?layoutmines:config.m;
+}
 void ClearBoard(){
 	game_state=MS_WAITING;
 	curmines=config.m;
+	layoutmines=config.m;
 	curfrees=bsize;
 	memset(board,MS_UNKNOWN,bsize);
 	memset(backboard,MS_UNINITIALIZED,bsize);
 	memset(showboard,MS_UNINITIALIZED,bsize);
 	showmines=bsize;
 	showtimer=MS_MAX_TIMER+1;
-	shownumw=MS_MAX_NUMSCR+1;
+	shownumw=0;
 	showface=MS_FACE_INVALID;
 	fvalid=false;
 	bestvalid=MS_INVALIDBEST;
@@ -148,15 +154,18 @@ void StopAutoGame(){
 	CheckMenuItem(GetMenu(hWnd),ID_FAUTO,MF_UNCHECKED);
 }
 int MaxChocoMines(){
-	// equations are fit from benchmarks to ensure
-	// maximum time used to generate chocolate game does not exceed 0.7 s.
+	// equations are fit from benchmarks to ensure ( in 99% cases )
+	// maximum time used to generate chocolate game does not exceed 1.5 s.
 	double x=log((double)config.h);
 	double y=log((double)config.w);
-	const double A=-0.04066958767322483;
-	const double B=+1.011944215416124;
-	const double C=-1.0106142501751958;
-	const double D=+0.03105017841744494;
-	return floor(exp(A*(x*x+y*y)+B*(x+y)+C+D*x*y));
+	double s=x+y,x2=x*x,y2=y*y;
+	const double A=+1.2994885419624760;
+	const double B=+0.4145579744285156;
+	const double C=+0.0823501516492460;
+	const double D=-0.0080262639396200;
+	const double E=+0.0103488860309975;
+	const double F=+0.0129018702933898;
+	return floor(exp(A+B*x*y+(C+D*s*s)*s+E*(x2+y2)+F*(x*x2+y*y2)));
 }
 void StopWaiting(){
 	if(game_state==MS_WAITING&&!layout){
@@ -168,7 +177,7 @@ void StopWaiting(){
 bool GetFreq(){
 	if(game_state!=MS_PLAYING&&!layout)return false;
 	if(!fvalid){
-		if(fvalid=MSolve(config.w,config.h,config.m,board,fboard))cheated=true;
+		if(fvalid=MSolve(config.w,config.h,GetTotalMines(),board,fboard))cheated=true;
 	}
 	return fvalid;
 }
@@ -535,12 +544,23 @@ BOOL Initialize(){
 }
 int Translate(int mx,int my){
 	int lw=MS_CELL_METRIC*config.w,lh=MS_CELL_METRIC*config.h;
-	int fx=MS_BORDER_LEFT+(lw-MS_FACE_METRIC)/2;
-	int fy=MS_BORDER_TOP+MS_HEADER_SHT;
-	if(mx>=fx&&mx<fx+MS_FACE_METRIC&&my>=fy&&my<fy+MS_FACE_METRIC)return MS_ONFACE;
 	int bx=MS_BORDER_LEFT,by=MS_BORDER_TOP+MS_HEADER_CY+MS_BORDER_MID;
 	if(mx>=bx&&mx<bx+lw&&my>=by&&my<by+lh)
 		return MS_PAIR((mx-bx)/MS_CELL_METRIC,(my-by)/MS_CELL_METRIC);
+
+	int fx=MS_BORDER_LEFT+(lw-MS_FACE_METRIC)/2;
+	int fy=MS_BORDER_TOP+MS_HEADER_SHT;
+	if(mx>=fx&&mx<fx+MS_FACE_METRIC&&my>=fy&&my<fy+MS_FACE_METRIC)
+		return MS_ONFACE;
+
+	int minescrx=MS_BORDER_LEFT+MS_NUMSCRL_SHL+1;
+	int hy=MS_BORDER_TOP+MS_HEADER_SHT+1;
+	if(mx>=minescrx&&mx<minescrx+shownumw*MS_NUMSCR_CXK&&my>=hy&&my<hy+MS_NUMSCR_CY-2){
+		const int deltam[]={1,10,100,1000,10000};
+		wheeldeltam=deltam[shownumw-1-(mx-minescrx)/MS_NUMSCR_CXK];
+		return MS_ONMINE;
+	}
+
 	return MS_ONELSE;
 }
 void CheckGame(){
@@ -572,18 +592,49 @@ void KeyDownEvent(WPARAM wParam){
 	case VK_F2:
 		PostMessage(hWnd,WM_COMMAND,ID_GSTART,0);
 		break;
-	case VK_F4:
-		PostMessage(hWnd,WM_COMMAND,ID_FAUTO,0);
-		break;
 	case VK_F6:
 		PostMessage(hWnd,WM_COMMAND,ID_FPROB,0);
 		break;
-	case VK_F12:
-		PostMessage(hWnd,WM_COMMAND,ID_FENDGAME,0);
-		break;
-	case VK_F11:
-		PostMessage(hWnd,WM_COMMAND,ID_FBEST,0);
-		break;
+	}
+	if(layout){
+		int pos=Translate(cur_mx,cur_my);
+		int x=MS_GETX(pos),y=MS_GETY(pos);
+		INT8 &bxy=On(board,x,y);
+		if(wParam==VK_OEM_3
+			||wParam<=0x38&&wParam>=0x30
+			||wParam<=0x68&&wParam>=0x60){
+			curmines+=bxy==MS_FLAG;
+			bxy=wParam&0xF;
+			LayoutUpdate();
+		}
+		else switch(wParam){
+		case VK_SPACE:
+		case VK_OEM_MINUS:
+		case VK_SUBTRACT:
+			curmines+=bxy==MS_FLAG;
+			bxy=MS_UNKNOWN;
+			LayoutUpdate();
+			break;
+		case 0x46://F
+		case 0x39:
+		case 0x69:
+			curmines-=bxy!=MS_FLAG;
+			bxy=MS_FLAG;
+			break;
+		}
+	}
+	else{
+		switch(wParam){
+		case VK_F4:
+			PostMessage(hWnd,WM_COMMAND,ID_FAUTO,0);
+			break;
+		case VK_F12:
+			PostMessage(hWnd,WM_COMMAND,ID_FENDGAME,0);
+			break;
+		case VK_F11:
+			PostMessage(hWnd,WM_COMMAND,ID_FBEST,0);
+			break;
+		}
 	}
 }
 void PaintEvent(){
@@ -602,7 +653,7 @@ void PaintEvent(){
 	ivld.right=0;
 	int curpos=Translate(cur_mx,cur_my);
 	int curx=MS_ONELSE,cury=MS_ONELSE;
-	if(curpos!=MS_ONELSE&&curpos!=MS_ONFACE){
+	if(MS_ONBOARD(curpos)){
 		curx=MS_GETX(curpos);
 		cury=MS_GETY(curpos);
 	}
@@ -617,14 +668,15 @@ void PaintEvent(){
 			}
 		}
 	}
-	
+	if(minf==MS_PROB_MAX)++minf;
+
 	for(int x=0;x<config.w;++x)for(int y=0;y<config.h;++y){
 		bool bestchs=false;
 		int cell=On(board,x,y),cellf=On(fboard,x,y),showcell=cell;
 		if(MS_ISFUNC(cell)){
 			if(game_state==MS_WAITING||game_state==MS_PLAYING){
 				bool isdblcd=(lb_down&&rb_down&&abs(curx-x)<=1&&abs(cury-y)<=1);
-				bool issinglecd=(lb_downb&&curx==x&&cury==y)&&!(shift&&layout);
+				bool issinglecd=(lb_downb&&curx==x&&cury==y)&&!(rehide&&layout);
 				bool isautocd=autoclick;
 				if(isautocd){
 					isautocd=(x==bestx&&y==besty);
@@ -682,7 +734,7 @@ void PaintEvent(){
 		tipvalid=false;
 	}
 	if(drawprob&&config.probtip){
-		if(curpos!=MS_ONELSE&&curpos!=MS_ONFACE&&MS_ISFUNC(On(board,curx,cury)))
+		if(MS_ONBOARD(curpos)&&MS_ISFUNC(On(board,curx,cury)))
 			tipvalid=(On(fboard,curx,cury)>0&&On(fboard,curx,cury)<MS_PROB_MAX);
 	}
 	if(tipvalid){
@@ -754,8 +806,8 @@ void PaintEvent(){
 	if(maxnum>MS_MAX_NUMSCR)maxnum=MS_MAX_NUMSCR;
 	if(timer>MS_MAX_TIMER)timer=MS_MAX_TIMER;
 
-	int nscrw=3,maxval=999;
-	while((maxval<config.m||maxval<timer)&&nscrw<maxnum){
+	int nscrw=3,maxval=999,totalmines=GetTotalMines();
+	while((maxval<totalmines||maxval<timer)&&nscrw<maxnum){
 		++nscrw;
 		maxval=maxval*10+9;
 	}
@@ -764,8 +816,10 @@ void PaintEvent(){
 	if(maxval<timer)timer=maxval;
 	if(timer<0)timer=0;
 
+	int mscrw=std::max(nscrw,shownumw);
 	int minescrx=MS_BORDER_LEFT+MS_NUMSCRL_SHL+1;
-	int timerscrx=MS_BORDER_LEFT+lw-MS_NUMSCRR_SHR-1-nscrw*MS_NUMSCR_CXK;
+	int timerscrx2=MS_BORDER_LEFT+lw-MS_NUMSCRR_SHR-1;
+	int timerscrx=timerscrx2-mscrw*MS_NUMSCR_CXK;
 	if(nscrw!=shownumw){
 		shownumw=nscrw;
 		showmines=minenum-1;
@@ -776,14 +830,20 @@ void PaintEvent(){
 			MS_FRAME_SHX5,MS_FRAME_SHY1,1,MS_NUMSCR_CY);
 		ShortPaint(minescrx+nscrw*MS_NUMSCR_CXK,hy,
 			MS_FRAME_SHX6,MS_FRAME_SHY1,1,MS_NUMSCR_CY);
-		ShortPaint(timerscrx+nscrw*MS_NUMSCR_CXK,hy,
+		LongPaint(minescrx+nscrw*MS_NUMSCR_CXK+1,MS_BORDER_TOP,
+			(mscrw-nscrw)*MS_NUMSCR_CXK,MS_HEADER_CY,MS_FRAME_SHX7,MS_FRAME_SHY1,1,1);
+		ShortPaint(timerscrx2,hy,
 			MS_FRAME_SHX6,MS_FRAME_SHY1,1,MS_NUMSCR_CY);
-		LongPaint(timerscrx,hy,nscrw*MS_NUMSCR_CXK,1,
+		timerscrx2-=nscrw*MS_NUMSCR_CXK;
+		LongPaint(timerscrx2,hy,nscrw*MS_NUMSCR_CXK,1,
 			MS_FRAME_SHX5,MS_FRAME_SHY1,1,MS_NUMSCR_CY);
-		ShortPaint(timerscrx-1,hy,
+		ShortPaint(timerscrx2-1,hy,
 			MS_FRAME_SHX4,MS_FRAME_SHY1,1,MS_NUMSCR_CY);
-		BitBlt(hdc,minescrx-1,hy,nscrw*MS_NUMSCR_CXK+2,MS_NUMSCR_CY,mdc,minescrx-1,hy,SRCCOPY);
-		BitBlt(hdc,timerscrx-1,hy,nscrw*MS_NUMSCR_CXK+2,MS_NUMSCR_CY,mdc,timerscrx-1,hy,SRCCOPY);
+		LongPaint(timerscrx,MS_BORDER_TOP,
+			(mscrw-nscrw)*MS_NUMSCR_CXK,MS_HEADER_CY,MS_FRAME_SHX7,MS_FRAME_SHY1,1,1);
+		BitBlt(hdc,minescrx-1,hy,mscrw*MS_NUMSCR_CXK+2,MS_NUMSCR_CY,mdc,minescrx-1,hy,SRCCOPY);
+		BitBlt(hdc,timerscrx,hy,mscrw*MS_NUMSCR_CXK+2,MS_NUMSCR_CY,mdc,timerscrx,hy,SRCCOPY);
+		timerscrx=timerscrx2;
 	}
 	int ncshxw,ny=MS_BORDER_TOP+MS_NUMSCR_SHT;
 	if(minenum!=showmines){
@@ -908,8 +968,8 @@ void MenuEvent(WORD wParam){
 		layout=((MF_CHECKED&GetMenuState(hMenu,ID_FLAYOUT,MF_BYCOMMAND))==0);
 		CheckMenuItem(hMenu,ID_FLAYOUT,layout?MF_CHECKED:MF_UNCHECKED);
 		ChangeSkinColor(layout?MS_LAYOUT_NUM:(choco?MS_CHOCO_NUM:MS_NORMAL_NUM));
-		if(game_state!=MS_PLAYING)ClearBoard();
 		if(layout)StopAutoGame();
+		if(game_state!=MS_PLAYING&&!(game_state==MS_WAITING&&layout))ClearBoard();
 		EnableMenuItem(hMenu,ID_FBEST,layout?MF_DISABLED:MF_ENABLED);
 		EnableMenuItem(hMenu,ID_FENDGAME,layout?MF_DISABLED:MF_ENABLED);
 		EnableMenuItem(hMenu,ID_FAUTO,layout?MF_DISABLED:MF_ENABLED);
@@ -972,32 +1032,9 @@ void NewGame(int initx,int inity,bool mustopen=false){
 			On(backboard,x,y)=CountFlagAround(backboard,x,y);
 }
 void NewChocoGame(int initx,int inity){
-
-	INT8 *pushboard=board;
-	board=chocoboard;
 	do{
-		curfrees=bsize;
 		NewGame(initx,inity,true);
-		memset(board,MS_UNKNOWN,bsize);
-		Discover(initx,inity);
-
-		while(curfrees!=config.m){
-			MSolve(config.w,config.h,config.m,board,fboard);
-
-			bool mustguess=true;
-			for(int x=0;x<config.w;++x)for(int y=0;y<config.h;++y){
-				if(MS_ISFUNC(On(board,x,y))&&On(fboard,x,y)==0){
-					Discover(x,y);
-					mustguess=false;
-				}
-			}
-			if(mustguess)break;
-		} 
-
-	} while(curfrees!=config.m);
-
-	curfrees=bsize;
-	board=pushboard;
+	} while(!MSolve(config.w,config.h,backboard,initx,inity));
 	chocoplaying=true;
 }
 void Discover(std::queue<int> &dislist){
@@ -1058,11 +1095,12 @@ void DiscoverAround(int x,int y){
 	Discover(dislist);
 }
 void ClickEvent(int pos,int type){
-	if(pos==MS_ONELSE)return;
 	if(pos==MS_ONFACE){
 		if(type==MS_LCLICK)ClearBoard();
+		return;
 	}
-	else if(game_state==MS_WAITING||game_state==MS_PLAYING){
+	
+	if(MS_ONBOARD(pos)&&game_state==MS_WAITING||game_state==MS_PLAYING){
 		int x=MS_GETX(pos),y=MS_GETY(pos);
 		if(type==MS_RCLICK){
 			if(On(board,x,y)==MS_UNKNOWN){
@@ -1178,18 +1216,15 @@ LRESULT CALLBACK WndProc(HWND _hWndp,UINT message,WPARAM wParam,LPARAM lParam){
 		}
 		break;
 	case WM_KEYDOWN:
-		if(wParam==VK_SHIFT)shift=true;
-		else KeyDownEvent(wParam);
-		break;
-	case WM_KEYUP:
-		if(wParam==VK_SHIFT)shift=false;
+		KeyDownEvent(wParam);
 		break;
 	case WM_LBUTTONDOWN:
 		if(pos==MS_ONFACE)lb_downf=true;
 		else if(rb_down)lb_down=true;
 		else{
 			lb_downb=true;
-			if(layout&&shift&&!MS_ISFUNC(On(board,x,y))){
+			if(layout&&!MS_ISFUNC(On(board,x,y))){
+				rehide=true;
 				On(board,x,y)=MS_UNKNOWN;
 				LayoutUpdate();
 			}
@@ -1197,11 +1232,12 @@ LRESULT CALLBACK WndProc(HWND _hWndp,UINT message,WPARAM wParam,LPARAM lParam){
 		break;
 	case WM_LBUTTONUP:
 		if(lb_down&&rb_down)ClickEvent(pos,MS_DBLCLICK);
-		else if(lb_downf&&pos==MS_ONFACE||!(layout&&shift)&&lb_downb&&pos!=MS_ONFACE)
+		else if(pos==MS_ONFACE&&lb_downf||MS_ONBOARD(pos)&&lb_downb&&!(layout&&rehide))
 			ClickEvent(pos,MS_LCLICK);
 		lb_downf=false;
 		lb_downb=false;
 		lb_down=false;
+		rehide=false;
 		break;
 	case WM_RBUTTONDOWN:
 		rb_down=true;
@@ -1216,12 +1252,21 @@ LRESULT CALLBACK WndProc(HWND _hWndp,UINT message,WPARAM wParam,LPARAM lParam){
 		rb_down=false;
 		break;
 	case WM_MOUSEMOVE:
+		if(!(MK_LBUTTON&wParam)&&(lb_downf||lb_down||lb_downb)){
+			lb_downf=false;
+			lb_downb=false;
+			lb_down=false;
+			rehide=false;
+		}
+		if(!(MK_RBUTTON&wParam)&&rb_down){
+			rb_down=false;
+		}
 		cur_mx=curx;
 		cur_my=cury;
-		if(layout&&pos!=MS_ONFACE){
+		if(layout&&MS_ONBOARD(pos)){
 			if(lb_down&&rb_down)ClickEvent(pos,MS_DBLCLICK);
 			else if(lb_downb){
-				if(!shift)ClickEvent(pos,MS_LCLICK);
+				if(!rehide)ClickEvent(pos,MS_LCLICK);
 				else if(!MS_ISFUNC(On(board,x,y))){
 					On(board,x,y)=MS_UNKNOWN;
 					LayoutUpdate();
@@ -1231,18 +1276,31 @@ LRESULT CALLBACK WndProc(HWND _hWndp,UINT message,WPARAM wParam,LPARAM lParam){
 		break;
 	case WM_MOUSEWHEEL:
 		if(layout){
-			int zDelta=GET_WHEEL_DELTA_WPARAM(wParam);
+			int zDelta=GET_WHEEL_DELTA_WPARAM(wParam)/WHEEL_DELTA;
 			int pos=Translate(cur_mx,cur_my);
-			int x=MS_GETX(pos),y=MS_GETY(pos);
-			INT8 &bxy=On(board,x,y);
-			bxy-=zDelta/WHEEL_DELTA;
-			bxy%=1+MS_UNKNOWN;
-			if(bxy<0)bxy+=1+MS_UNKNOWN;
-			LayoutUpdate();
+			if(MS_ONBOARD(pos)){
+				int x=MS_GETX(pos),y=MS_GETY(pos);
+				INT8 &bxy=On(board,x,y);
+				curmines+=bxy==MS_FLAG;
+				bxy-=zDelta;
+				bxy%=1+MS_UNKNOWN;
+				if(bxy<0)bxy+=1+MS_UNKNOWN;
+				//curmines-=bxy==MS_FLAG;//not possible...
+				LayoutUpdate();
+			}
+			else if(pos==MS_ONMINE){
+				int oldlayout=layoutmines;
+				layoutmines-=zDelta*wheeldeltam;
+				if(layoutmines<=1)layoutmines=1;
+				if(layoutmines>=config.w*config.h)layoutmines=config.w*config.h-1;
+				zDelta=oldlayout-layoutmines;
+				curmines-=zDelta;
+				LayoutUpdate();
+			}
 		}
 		break;
 	case WM_KILLFOCUS:
-		shift=false;
+		rehide=false;
 		rb_down=false;
 		lb_down=false;
 		lb_downb=false;
