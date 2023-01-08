@@ -17,5 +17,11 @@ bool MSolve(int32_t _width,int32_t _height,int32_t _mines,const int8_t *_board,i
 //should be self-consistent, and total number of mines is known and correct
 bool MSolve(int32_t _width,int32_t _height,const int8_t *_board,int32_t initx,int32_t inity);
 
+//Compare mine map to pre-computed must-guess configurations
+//And adjust must-guess patch of the map to try to avoid guess
+//return true if guess is required and adjusting is failed
+//note: when false is returned, game is not guaranteed to be guess-free
+bool MustGuess(int32_t _width,int32_t _height,int8_t *_board,int32_t initx,int32_t inity);
+
 #endif
 

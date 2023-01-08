@@ -155,16 +155,16 @@ void StopAutoGame(){
 }
 int MaxChocoMines(){
 	// equations are fit from benchmarks to ensure ( in 99% cases )
-	// maximum time used to generate chocolate game does not exceed 1.5 s.
+	// maximum time used to generate chocolate game does not exceed 12.13 s.
 	double x=log((double)config.h);
 	double y=log((double)config.w);
 	double s=x+y,x2=x*x,y2=y*y;
-	const double A=+1.2994885419624760;
-	const double B=+0.4145579744285156;
-	const double C=+0.0823501516492460;
-	const double D=-0.0080262639396200;
-	const double E=+0.0103488860309975;
-	const double F=+0.0129018702933898;
+	const double A=+3.0811322606833380;
+	const double B=+0.5249401065419702;
+	const double C=-0.4758789002852035;
+	const double D=-0.0096955824413498;
+	const double E=+0.0662142402465983;
+	const double F=+0.0134927200353099;
 	return floor(exp(A+B*x*y+(C+D*s*s)*s+E*(x2+y2)+F*(x*x2+y*y2)));
 }
 void StopWaiting(){
@@ -992,13 +992,13 @@ void MenuEvent(WORD wParam){
 	}
 }
 void Discover(int x,int y);
-void NewGame(int initx,int inity,bool mustopen=false){
+bool NewGame(int initx,int inity,bool noguess=false){
 	int ntc=config.m;
 	if(ntc>=bsize/2){
 		ntc=bsize-1-ntc;
 		memset(backboard,MS_FLAG,bsize);
 		On(backboard,initx,inity)=MS_UNINITIALIZED;
-		if(mustopen){
+		if(noguess){
 			for(int idx=-1;idx<=1;++idx)for(int idy=-1;idy<=1;++idy){
 				int nx=initx+idx,ny=inity+idy;
 				if(On(backboard,nx,ny)==MS_FLAG){
@@ -1020,21 +1020,21 @@ void NewGame(int initx,int inity,bool mustopen=false){
 		while(ntc){
 			int nx=random64()%config.w,ny=random64()%config.h;
 			if(On(backboard,nx,ny)==MS_UNINITIALIZED&&(
-				mustopen?(abs(nx-initx)>1||abs(ny-inity)>1):(nx!=initx||ny!=inity)
+				noguess?(abs(nx-initx)>1||abs(ny-inity)>1):(nx!=initx||ny!=inity)
 				)){
 				On(backboard,nx,ny)=MS_FLAG;
 				--ntc;
 			}
 		}
 	}
+	if(noguess&&MustGuess(config.w,config.h,backboard,initx,inity))return false;
 	for(int x=0;x<config.w;++x)for(int y=0;y<config.h;++y)
 		if(On(backboard,x,y)==MS_UNINITIALIZED)
 			On(backboard,x,y)=CountFlagAround(backboard,x,y);
+	return true;
 }
 void NewChocoGame(int initx,int inity){
-	do{
-		NewGame(initx,inity,true);
-	} while(!MSolve(config.w,config.h,backboard,initx,inity));
+	while(!(NewGame(initx,inity,true)&&MSolve(config.w,config.h,backboard,initx,inity)));
 	chocoplaying=true;
 }
 void Discover(std::queue<int> &dislist){
