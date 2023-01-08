@@ -24,6 +24,9 @@
     <ClCompile Include="MSolver.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="adjustmines.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Image Include="ms.ico">
